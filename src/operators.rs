@@ -1,3 +1,5 @@
+use std::ops::Deref;
+
 use crate::tensor::Tensor;
 
 // get (row) vectors from a 2D table given a list of indices
@@ -71,25 +73,70 @@ pub fn masked_softmax(y: &mut Tensor<f32>) {
 }
 
 pub fn rms_norm(y: &mut Tensor<f32>, x: &Tensor<f32>, w: &Tensor<f32>, epsilon: f32) {
-    todo!("实现 rms_norm，计算前做一些必要的检查会帮助你后续调试")
+    assert_eq!(x.size(), y.size());
+    let len = w.size();
+    let y = unsafe { y.data_mut() };
+    let x = x.data();
+    let w = w.data();
+    for (y, x) in y.chunks_mut(len).zip(x.chunks(len)) {
+        // calculate divisor k
+        let k: f32 = x.iter().map(|x| x * x).sum::<f32>() / len as f32 + epsilon;
+        let k = k.sqrt();
+        // calculate x_i*w/k element-wise
+        let product: Vec<f32> = w.iter().zip(x.iter()).map(|(w, x)| x * w / k).collect();
+        for (y, pro) in y.iter_mut().zip(product.iter()) {
+            *y = *pro;
+        }
+    }
+    // todo!("实现 rms_norm，计算前做一些必要的检查会帮助你后续调试")
 }
 
 // y = sigmoid(x) * x * y
 // hint: this is an element-wise operation
 pub fn silu(y: &mut Tensor<f32>, x: &Tensor<f32>) {
-    // let len = y.size();
-    // assert!(len == x.size());
+    let len = y.size();
+    assert!(len == x.size());
+    // define sigmoid(x)
+    let sigmoid = |x: f32| 1.0 / (1.0 + (-x).exp());
 
-    // let _y = unsafe { y.data_mut() };
-    // let _x = x.data();
+    let y = unsafe { y.data_mut() };
+    let x = x.data();
 
-    todo!("实现 silu，这里给了一些前期准备工作的提示，你可以参考")
+    for (y, x) in y.iter_mut().zip(x.iter()) {
+        *y = sigmoid(*x) * x * *y;
+    }
+    // todo!("实现 silu，这里给了一些前期准备工作的提示，你可以参考")
 }
 
 // C = beta * C + alpha * A @ B^T
 // hint: You don't need to do an explicit transpose of B
 pub fn matmul_transb(c: &mut Tensor<f32>, beta: f32, a: &Tensor<f32>, b: &Tensor<f32>, alpha: f32) {
-    todo!("实现 matmul_transb，计算前做一些必要的检查会帮助你后续调试");
+    // todo!("实现 matmul_transb，计算前做一些必要的检查会帮助你后续调试");
+    use std::iter::zip;
+    let m = a.shape()[0];
+    let n = b.shape()[0];
+    let k = b.shape()[1];
+    // shape assertions
+    assert_eq!(a.shape()[1], b.shape()[1]);
+    assert_eq!(m, c.shape()[0]);
+    assert_eq!(n, c.shape()[1]);
+
+    let a = a.data();
+    let b = b.data();
+    let c = unsafe { c.data_mut() };
+
+    for (row, c) in c.chunks_mut(n).enumerate() {
+        // shape assertion
+        assert!(row <= m);
+        for (col, c) in c.iter_mut().enumerate() {
+            assert!(col <= n);
+            // take the a_i and b_j to calculate c_ij
+            // so actual transpose is not needed
+            let row = a.chunks(k).nth(row).unwrap();
+            let col = b.chunks(k).nth(col).unwrap();
+            *c = beta * *c + alpha * zip(row.iter(), col.iter()).map(|(a, b)| a * b).sum::<f32>();
+        }
+    }
 }
 
 // Dot product of two tensors (treated as vectors)
